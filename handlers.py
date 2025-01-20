@@ -100,6 +100,7 @@ def invite_new_user_step_name(message: types.Message, bot: TeleBot):
         bot.reply_to(message, "Введите должность нового сотрудника")
         bot.register_next_step_handler(message, invite_new_user_step_position, bot=bot, data=data)
     except Exception as e:
+        print(e)
         bot.reply_to(message, "Не удалось создать пользоватея")
 
 def invite_new_user_step_position(message: types.Message, bot: TeleBot, data: dict):

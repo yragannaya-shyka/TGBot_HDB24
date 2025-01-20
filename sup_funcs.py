@@ -21,4 +21,4 @@ def map_user_name_bitrix_id(file_name: str, user_name: str):
 def bitrix_id_by_chat_id(chat_id: int, file_name='users.json'):
     with open(file_name, "r", encoding="utf-8") as f_o:
         data_from_json = json.load(f_o)
-    return data_from_json[chat_id]["b24_user_id"]
+    return data_from_json[str(chat_id)]["b24_user_id"]

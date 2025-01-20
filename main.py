@@ -28,6 +28,8 @@ def help_command(message):
     bot.send_message(message.chat.id, "Это меню помощи. Доступные команды: /start, /help, /about", reply_markup=keyboard)
 
 register_handler(bot)
+
+
 if __name__ == '__main__':
     while True:
         try:
