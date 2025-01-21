@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from sup_funcs import read_load_json_data, map_user_name_bitrix_id, bitrix_id_by_chat_id
 import urllib.parse
+from texts import  welcome_message, info_message, help_message
 
 load_dotenv()
 
@@ -15,8 +16,36 @@ def hello_handler(message: types.Message, bot: TeleBot):
     bot.send_message(message.chat.id, "Hello test")
 
 
+def start_handle(message: types.Message, bot: TeleBot):
+    keybourd = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    create_request_button = types.KeyboardButton("Создать запрос")
+    keybourd.add(create_request_button)
+    bot.send_message(message.chat.id, welcome_message, parse_mode="Markdown", reply_markup=keybourd)
+
+
+def help_handle(message: types.Message, bot: TeleBot):
+    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    button_1 = types.KeyboardButton("Задать вопрос разработчику бота")
+    keyboard.add(button_1)
+    bot.send_message(message.chat.id, help_message, reply_markup=keyboard)
+
+
+def info_handle(message: types.Message, bot: TeleBot):
+    bot.send_message(message.chat.id, info_message)
+
+
+def request_handle(message: types.Message, bot: TeleBot):
+    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    button_1 = types.KeyboardButton("Button 1")
+    invite_new_user_button = types.KeyboardButton("Подключение к Битрикс24 нового сотрудника")
+    access_rights_button = types.KeyboardButton("Запрос прав доступа")
+    send_message_button_b24 = types.KeyboardButton("Отправить уведомление")
+    keyboard.add(button_1, invite_new_user_button, access_rights_button, send_message_button_b24)
+    bot.send_message(message.chat.id, 'Выберите интересующий вас запрос из меню ниже.', reply_markup=keyboard)
+
+
 def handle_message(message: types.Message, bot:TeleBot):
-    """Handle ReplyKeybord with "start" command.
+    """Handle ReplyKeybord with "requset" command.
 
     Args:
         message (types.Message): await message from telegram.
@@ -29,7 +58,6 @@ def handle_message(message: types.Message, bot:TeleBot):
     elif message.text == "Подключение к Битрикс24 нового сотрудника":
         msg = bot.reply_to(message, "Укажите ФИО нового сотрудника")
         bot.register_next_step_handler(message, invite_new_user_step_name, bot=bot)
-        # bot.send_message(message.chat.id, "Button 2 Pressed")
     elif message.text == "Запрос прав доступа":
         msg = bot.reply_to(message, "Укажите через запятую кому и какие права необходимо выдать.")
         bot.register_next_step_handler(msg, procces_access_rights_step, bot=bot)
@@ -142,6 +170,12 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, data: 
 def recodr_user_data(message: types.Message, bot: TeleBot):
     pass
 
+
 def register_handler(bot: TeleBot):
     bot.register_message_handler(hello_handler, func=lambda message: message.text == "Hello", pass_bot=True)
+    bot.register_message_handler(request_handle, func=lambda message: message.text == "Создать запрос", pass_bot=True)
+    bot.register_message_handler(request_handle, commands=["request"], pass_bot=True)
+    bot.register_message_handler(start_handle, func=lambda message: True, commands=["start"], pass_bot=True)
+    bot.register_message_handler(help_handle, func=lambda message: True, commands=["help"], pass_bot=True)
+    bot.register_message_handler(info_handle, commands=["info"], pass_bot=True)
     bot.register_message_handler(handle_message, func=lambda message: True, pass_bot=True)
