@@ -1,16 +1,18 @@
 from telebot import types, TeleBot
 import requests
-import os
-from dotenv import load_dotenv
-from sup_funcs import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id
+from utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id
 import urllib.parse
-from texts import  welcome_message, info_message, help_message, rights_list_message
+from messages import  welcome_message, info_message, help_message, rights_list_message
+from keyboards import create_keyboard
+from decorators import handle_errors , handle_action_cancel
+from config import B24_WH, B24_ADMIN_ID
 
-load_dotenv()
 
+def get_cancel_keyboard():
+    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.add(types.KeyboardButton("Отмена"))
+    return markup
 
-b24_wh = os.getenv("B24_WH")
-b24_admin_id = os.getenv("B24_ADMIN_ID")
 
 
 def hello_handler(message: types.Message, bot: TeleBot):
@@ -18,16 +20,12 @@ def hello_handler(message: types.Message, bot: TeleBot):
 
 
 def start_handle(message: types.Message, bot: TeleBot):
-    keybourd = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    create_request_button = types.KeyboardButton("Создать запрос")
-    keybourd.add(create_request_button)
-    bot.send_message(message.chat.id, welcome_message, parse_mode="Markdown", reply_markup=keybourd)
+    keyboard = create_keyboard([types.KeyboardButton("Создать запрос")])
+    bot.send_message(message.chat.id, welcome_message, parse_mode="Markdown", reply_markup=keyboard)
 
 
 def help_handle(message: types.Message, bot: TeleBot):
-    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    question_button = types.KeyboardButton("Задать вопрос разработчику бота")
-    keyboard.add(question_button)
+    keyboard = create_keyboard([types.KeyboardButton("Задать вопрос разработчику бота")])
     bot.send_message(message.chat.id, help_message, reply_markup=keyboard)
 
 
@@ -36,11 +34,9 @@ def info_handle(message: types.Message, bot: TeleBot):
 
 
 def request_handle(message: types.Message, bot: TeleBot):
-    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    invite_new_user_button = types.KeyboardButton("Подключение нового сотрудника")
-    access_rights_button = types.KeyboardButton("Предоставление прав доступа")
-    send_message_button_b24 = types.KeyboardButton("Отправить уведомление")
-    keyboard.add(invite_new_user_button, access_rights_button, send_message_button_b24)
+    keyboard = create_keyboard([types.KeyboardButton("Подключение нового сотрудника"),
+                                types.KeyboardButton("Предоставление прав доступа"),
+                                types.KeyboardButton("Отправить уведомление")])
     bot.send_message(message.chat.id, 'Выберите интересующий вас запрос из меню ниже.', reply_markup=keyboard)
 
 
@@ -52,12 +48,13 @@ def handle_message(message: types.Message, bot:TeleBot):
         bot (TeleBot): Telebot class object of the current bot.
 
     """
+    chat_id = message.chat.id
 
     if message.text == "Подключение нового сотрудника":
         msg = bot.reply_to(message, "Введите ФИО нового сотрудника")
         bot.register_next_step_handler(message, invite_new_user_step_name, bot=bot)
     elif message.text == "Предоставление прав доступа":
-        msg = bot.reply_to(message, "Введите ФИО сотрудника, кому необходимо предоставить права доступа.")
+        msg = bot.send_message(chat_id, "Введите ФИО сотрудника, кому необходимо предоставить права доступа.", reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(msg, procces_access_rights_step_name, bot=bot)
     elif message.text == "Отправить уведомление":
         msg = bot.reply_to(message, "Добавте текст уведомления")
@@ -75,66 +72,67 @@ def procces_notify_step(message: types.Message, bot: TeleBot):
     """
     try:
         description = message.text
-        requests.get(f"{b24_wh}im.notify.personal.add.json?USER_ID={b24_admin_id}&MESSAGE={description}")
+        requests.get(f"{B24_WH}im.notify.personal.add.json?USER_ID={B24_ADMIN_ID}&MESSAGE={description}")
         bot.reply_to(message, f"Уведомление '{description}' отправлено!")
     except Exception as e:
         bot.reply_to(message, "Что-то пошло не так!")
 
 
 #access_rights procces steps
+@handle_errors
+@handle_action_cancel
 def procces_access_rights_step_name(message: types.Message, bot: TeleBot):
-    try:
-        data = {
-            "type": "Запрос прав доступа",
-            "initiator": ["ufCRM_12_1732527565", None],
-            "name": ["ufCrm_12_1737536925", None],
-            "rights": ["ufCrm_12_1737537025432", None],
-            "link": ["ufCrm_12_1737537083844", None]
-        }
+    data = {
+        "type": "Запрос прав доступа",
+        "initiator": ["ufCRM_12_1732527565", None],
+        "initiator_tg_id": ["ufCrm_12_1736781758613", None],
+        "name": ["ufCrm_12_1737536925", None],
+        "rights": ["ufCrm_12_1737537025432", None],
+        "link": ["ufCrm_12_1737537083844", None]
+    }
 
-        initiator = bitrix_id_by_chat_id(message.chat.id)
-        data["initiator"][1] = initiator
-        name = message.text
-        data["name"][1] = bitrix_id_by_name("users.json", name)
+    initiator_tg_id = message.chat.id
+    initiator = bitrix_id_by_chat_id(initiator_tg_id)
+    data["initiator"][1] = initiator
+    data["initiator_tg_id"][1] = initiator_tg_id
+    name = message.text
+    data["name"][1] = bitrix_id_by_name("users.json", name)
 
-        bot.reply_to(message, rights_list_message)
-        bot.register_next_step_handler(message, procces_access_rights_step_rights, bot=bot, data=data)
-    except Exception as e:
-        bot.send_message(message.chat.id, "Не удалось обработать ФИО")
+    bot.send_message(message.chat.id, rights_list_message, reply_markup=get_cancel_keyboard())
+    bot.register_next_step_handler(message, procces_access_rights_step_rights, bot=bot, data=data)
 
 
+@handle_errors
+@handle_action_cancel
 def procces_access_rights_step_rights(message: types.Message, bot: TeleBot, data: dict):
-    try:
-        rights = message.text
-        data["rights"][1] = rights
-        msg = bot.reply_to(message, "Вставьте ссылку на объект (папка/файл) предоставления прав доступа.")
-        bot.register_next_step_handler(msg, procces_access_rights_step_link, bot=bot, data=data)
-    except Exception as e:
-        bot.reply_to(message, "Не удалось обработать запрашиваемые права")
+    rights = message.text
+    data["rights"][1] = rights
+    bot.send_message(message.chat.id, "Вставьте ссылку на объект (папка/файл) предоставления прав доступа.", reply_markup=get_cancel_keyboard())
+    bot.register_next_step_handler(message, procces_access_rights_step_link, bot=bot, data=data)
 
 
-
+@handle_errors
+@handle_action_cancel
 def procces_access_rights_step_link(message: types.Message, bot: TeleBot, data: dict):
-    try:
-        link = message.text
-        data["link"][1] = link
+    link = message.text
+    data["link"][1] = link
 
-        request_id = read_load_json_data("users_requests.json", data)
-        encoded_description = urllib.parse.unquote(data["link"][1])
-        coded_url = urllib.parse.quote(encoded_description,safe=":/")
-        double_coded_url = urllib.parse.quote(coded_url)
+    request_id = read_load_json_data("users_requests.json", data)
+    encoded_description = urllib.parse.unquote(data["link"][1])
+    coded_url = urllib.parse.quote(encoded_description,safe=":/")
+    double_coded_url = urllib.parse.quote(coded_url)
 
 
-        requests.get(f'''{b24_wh}crm.item.add.json?entityTypeId=1034
+    requests.get(f'''{B24_WH}crm.item.add.json?entityTypeId=1034
                      &fields[TITLE]=ТГ запрос №{request_id} - {data["type"]}
                      &fields[ufCrm_12_1723450334376]=158
                      &fields[{data["name"][0]}]={data["name"][1]}
                      &fields[{data["rights"][0]}]={data["rights"][1]}
                      &fields[{data["link"][0]}]={double_coded_url}
-                     &fields[{data["initiator"][0]}]={data["initiator"][1]}''')
-        bot.reply_to(message, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
-    except Exception as e:
-        bot.reply_to(message, "Не удалось создать запрос на предоставление прав досутпа")
+                     &fields[{data["initiator"][0]}]={data["initiator"][1]}
+                     &fields[{data["initiator_tg_id"][0]}]={data["initiator_tg_id"][1]}''')
+    bot.send_message(message.chat.id, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
+
 
 
 #invite_new_user steps
@@ -151,9 +149,8 @@ def invite_new_user_step_name(message: types.Message, bot: TeleBot):
             "supervisor": ["ufCrm_12_1736781897", None],
 
         }
-
-        initiator = bitrix_id_by_chat_id(message.chat.id)
         initiator_tg_id = message.chat.id
+        initiator = bitrix_id_by_chat_id(initiator_tg_id)
         data["initiator"][1] = initiator
         data["initiator_tg_id"][1] = initiator_tg_id
         name = message.text
@@ -190,7 +187,7 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, data: 
         supervsor = message.text
         data["supervisor"][1] = bitrix_id_by_name("users.json", supervsor)
         request_id = read_load_json_data("users_requests.json", data)
-        requests.get(f'''{b24_wh}crm.item.add.json?entityTypeId=1034
+        requests.get(f'''{B24_WH}crm.item.add.json?entityTypeId=1034
                      &fields[TITLE]=ТГ запрос №{request_id} - {data["type"]}
                      &fields[ufCrm_12_1723450334376]=160
                      &fields[{data["name"][0]}]={data["name"][1]}
@@ -204,13 +201,16 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, data: 
         bot.reply_to(message, "Не удалось создать пользоватея")
 
 
-
+HANDLERS = [
+    (hello_handler, lambda message: message.text == "Hello"),
+    (request_handle, lambda message: message.text == "Создать запрос"),
+    (request_handle, lambda message: message.text.startswith("/request")),
+    (start_handle, lambda message: message.text.startswith("/start")),
+    (help_handle, lambda message: message.text.startswith("/help")),
+    (info_handle, lambda message: message.text.startswith("/info")),
+    (handle_message, lambda message: True)
+]
 
 def register_handler(bot: TeleBot):
-    bot.register_message_handler(hello_handler, func=lambda message: message.text == "Hello", pass_bot=True)
-    bot.register_message_handler(request_handle, func=lambda message: message.text == "Создать запрос", pass_bot=True)
-    bot.register_message_handler(request_handle, commands=["request"], pass_bot=True)
-    bot.register_message_handler(start_handle, func=lambda message: True, commands=["start"], pass_bot=True)
-    bot.register_message_handler(help_handle, func=lambda message: True, commands=["help"], pass_bot=True)
-    bot.register_message_handler(info_handle, commands=["info"], pass_bot=True)
-    bot.register_message_handler(handle_message, func=lambda message: True, pass_bot=True)
+    for handle, conditition in HANDLERS:
+        bot.register_message_handler(handle, func=conditition, pass_bot=True)
