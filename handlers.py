@@ -51,7 +51,7 @@ def handle_message(message: types.Message, bot:TeleBot):
     chat_id = message.chat.id
 
     if message.text == "Подключение нового сотрудника":
-        msg = bot.reply_to(message, "Введите ФИО нового сотрудника")
+        msg = bot.send_message(message.chat.id, "Введите ФИО нового сотрудника", reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(message, invite_new_user_step_name, bot=bot)
     elif message.text == "Предоставление прав доступа":
         msg = bot.send_message(chat_id, "Введите ФИО сотрудника, кому необходимо предоставить права доступа.", reply_markup=get_cancel_keyboard())
@@ -136,6 +136,8 @@ def procces_access_rights_step_link(message: types.Message, bot: TeleBot, data: 
 
 
 #invite_new_user steps
+@handle_errors
+@handle_action_cancel
 def invite_new_user_step_name(message: types.Message, bot: TeleBot):
     try:
 
@@ -156,32 +158,40 @@ def invite_new_user_step_name(message: types.Message, bot: TeleBot):
         name = message.text
         data["name"][1] = name
 
-        bot.reply_to(message, "Введите должность нового сотрудника")
+        bot.send_message(message.chat.id, "Введите должность нового сотрудника", reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(message, invite_new_user_step_position, bot=bot, data=data)
     except Exception as e:
         print(e)
         bot.reply_to(message, "Не удалось создать пользоватея")
 
+
+
+@handle_errors
+@handle_action_cancel
 def invite_new_user_step_position(message: types.Message, bot: TeleBot, data: dict):
     try:
         position = message.text
         data["position"][1] = position
-        msg = bot.reply_to(message, "Введите подразделение нового сотрудника")
+        msg = bot.send_message(message.chat.id, "Введите подразделение нового сотрудника", reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(msg, invite_new_user_step_division, bot=bot, data=data)
     except Exception as e:
         bot.reply_to(message, "Не удалось создать пользоватея")
 
 
+@handle_errors
+@handle_action_cancel
 def invite_new_user_step_division(message: types.Message, bot: TeleBot, data: dict):
     try:
         division = message.text
         data["division"][1] = division
-        msg = bot.reply_to(message, "Введите ФИО руководителя нового сотрудника")
+        msg = bot.send_message(message.chat.id, "Введите ФИО руководителя нового сотрудника", reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(msg, invite_new_user_step_supervisor, bot=bot, data=data)
     except Exception as e:
         bot.reply_to(message, "Не удалось создать пользоватея")
 
 
+@handle_errors
+@handle_action_cancel
 def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, data: dict):
     try:
         supervsor = message.text
