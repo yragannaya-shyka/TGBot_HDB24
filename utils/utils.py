@@ -1,15 +1,11 @@
 import json
+from telebot import types, TeleBot
+
+class ActionCanceled(Exception):
+    pass
+
 
 def read_load_json_data(file_name: str, data: dict):
-    """records a user's request into json file and return request ID
-
-    Args:
-        file_name (str): a file of json format where you want to record requests
-        data (dict): data which you want to record
-
-    Return nothing
-    """
-
     with open(file_name, "r", encoding="utf-8") as f_o:
         data_from_json = json.load(f_o)
 
@@ -22,15 +18,6 @@ def read_load_json_data(file_name: str, data: dict):
     return request_id
 
 def bitrix_id_by_name(file_name: str, user_name: str):
-    """Returns bitrix ID of the user by the name of the user
-
-    Args:
-        file_name (str): a file of users storage in json format
-        user_name (str): a name of the user
-
-    Returns:
-        _type_: _description_
-    """
     with open(file_name, "r", encoding="utf-8") as f_o:
         data_from_json = json.load(f_o)
 
@@ -43,3 +30,16 @@ def bitrix_id_by_chat_id(chat_id: int, file_name='users.json'):
     with open(file_name, "r", encoding="utf-8") as f_o:
         data_from_json = json.load(f_o)
     return data_from_json[str(chat_id)]["b24_user_id"]
+
+
+def cancelable_step(func):
+    def wrapper(message, *args, **kwargs):
+        user_id = message.chat.id
+        if message.text.lower() == '/cancel' or message.text == "Отмена":
+            raise ActionCanceled("Действие отменено.")
+        return func(message, *args, **kwargs)
+    return wrapper
+
+
+def process_step(message: types.Message, bot: TeleBot, step_name: str, next_step: callable, data: dict):
+    data[step_name] = message.text

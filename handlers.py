@@ -1,18 +1,12 @@
 from telebot import types, TeleBot
 import requests
-from utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id
+from utils.utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id
+from utils.bitrix import BitrixRequest
 import urllib.parse
 from messages import  welcome_message, info_message, help_message, rights_list_message
-from keyboards import create_keyboard
+from keyboards import create_keyboard, get_cancel_keyboard
 from decorators import handle_errors , handle_action_cancel
 from config import B24_WH, B24_ADMIN_ID
-
-
-def get_cancel_keyboard():
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True)
-    markup.add(types.KeyboardButton("Отмена"))
-    return markup
-
 
 
 def hello_handler(message: types.Message, bot: TeleBot):
@@ -41,13 +35,7 @@ def request_handle(message: types.Message, bot: TeleBot):
 
 
 def handle_message(message: types.Message, bot:TeleBot):
-    """Handle ReplyKeybord with "requset" command.
 
-    Args:
-        message (types.Message): await message from telegram.
-        bot (TeleBot): Telebot class object of the current bot.
-
-    """
     chat_id = message.chat.id
 
     if message.text == "Подключение нового сотрудника":
@@ -64,12 +52,7 @@ def handle_message(message: types.Message, bot:TeleBot):
 
 
 def procces_notify_step(message: types.Message, bot: TeleBot):
-    """Sends notify to B24 user in case of "Отправить уведомление" message from handele_message func.
 
-    Args:
-        message (types.Message): _description_
-        bot (TeleBot): _description_
-    """
     try:
         description = message.text
         requests.get(f"{B24_WH}im.notify.personal.add.json?USER_ID={B24_ADMIN_ID}&MESSAGE={description}")
@@ -82,55 +65,39 @@ def procces_notify_step(message: types.Message, bot: TeleBot):
 @handle_errors
 @handle_action_cancel
 def procces_access_rights_step_name(message: types.Message, bot: TeleBot):
-    data = {
-        "type": "Запрос прав доступа",
-        "initiator": ["ufCRM_12_1732527565", None],
-        "initiator_tg_id": ["ufCrm_12_1736781758613", None],
-        "name": ["ufCrm_12_1737536925", None],
-        "rights": ["ufCrm_12_1737537025432", None],
-        "link": ["ufCrm_12_1737537083844", None]
-    }
+    br = BitrixRequest()
 
     initiator_tg_id = message.chat.id
     initiator = bitrix_id_by_chat_id(initiator_tg_id)
-    data["initiator"][1] = initiator
-    data["initiator_tg_id"][1] = initiator_tg_id
+    br.params["initiator"].value = initiator
+    br.params["initiator_tg_id"].value = initiator_tg_id
     name = message.text
-    data["name"][1] = bitrix_id_by_name("users.json", name)
-
+    br.params["acces_rights_user"].value = bitrix_id_by_name("users.json", name)
     bot.send_message(message.chat.id, rights_list_message, reply_markup=get_cancel_keyboard())
-    bot.register_next_step_handler(message, procces_access_rights_step_rights, bot=bot, data=data)
+    bot.register_next_step_handler(message, procces_access_rights_step_rights, bot=bot, br=br)
 
 
 @handle_errors
 @handle_action_cancel
-def procces_access_rights_step_rights(message: types.Message, bot: TeleBot, data: dict):
+def procces_access_rights_step_rights(message: types.Message, bot: TeleBot, br: BitrixRequest):
     rights = message.text
-    data["rights"][1] = rights
+    br.params["acces_rights_type"].value = rights
     bot.send_message(message.chat.id, "Вставьте ссылку на объект (папка/файл) предоставления прав доступа.", reply_markup=get_cancel_keyboard())
-    bot.register_next_step_handler(message, procces_access_rights_step_link, bot=bot, data=data)
+    bot.register_next_step_handler(message, procces_access_rights_step_link, bot=bot, br=br)
 
 
 @handle_errors
 @handle_action_cancel
-def procces_access_rights_step_link(message: types.Message, bot: TeleBot, data: dict):
+def procces_access_rights_step_link(message: types.Message, bot: TeleBot, br: BitrixRequest):
     link = message.text
-    data["link"][1] = link
-
-    request_id = read_load_json_data("users_requests.json", data)
-    encoded_description = urllib.parse.unquote(data["link"][1])
+    encoded_description = urllib.parse.unquote(link)
     coded_url = urllib.parse.quote(encoded_description,safe=":/")
     double_coded_url = urllib.parse.quote(coded_url)
-
-
-    requests.get(f'''{B24_WH}crm.item.add.json?entityTypeId=1034
-                     &fields[TITLE]=ТГ запрос №{request_id} - {data["type"]}
-                     &fields[ufCrm_12_1723450334376]=158
-                     &fields[{data["name"][0]}]={data["name"][1]}
-                     &fields[{data["rights"][0]}]={data["rights"][1]}
-                     &fields[{data["link"][0]}]={double_coded_url}
-                     &fields[{data["initiator"][0]}]={data["initiator"][1]}
-                     &fields[{data["initiator_tg_id"][0]}]={data["initiator_tg_id"][1]}''')
+    br.params["acces_rights_object_link"].value = double_coded_url
+    record_data = br.get_data_for_record()
+    request_id = read_load_json_data("users_requests.json", record_data)
+    br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes["access_rights"].name}"
+    requests.get(br.create_bitrix_smart_process_element("access_rights"))
     bot.send_message(message.chat.id, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
 
 
@@ -139,76 +106,52 @@ def procces_access_rights_step_link(message: types.Message, bot: TeleBot, data: 
 @handle_errors
 @handle_action_cancel
 def invite_new_user_step_name(message: types.Message, bot: TeleBot):
-    try:
+    br = BitrixRequest()
 
-        data = {
-            "type": "Добавление нового сотрудника",
-            "initiator": ["ufCrm_12_1732527565", None],
-            "initiator_tg_id": ["ufCrm_12_1736781758613", None],
-            "name": ["ufCrm_12_1736781830742", None],
-            "position": ["ufCrm_12_1736781849952", None],
-            "division": ["ufCrm_12_1736781881035", None],
-            "supervisor": ["ufCrm_12_1736781897", None],
+    initiator_tg_id = message.chat.id
+    initiator = bitrix_id_by_chat_id(initiator_tg_id)
+    br.params["initiator"].value = initiator
+    br.params["initiator_tg_id"].value = initiator_tg_id
 
-        }
-        initiator_tg_id = message.chat.id
-        initiator = bitrix_id_by_chat_id(initiator_tg_id)
-        data["initiator"][1] = initiator
-        data["initiator_tg_id"][1] = initiator_tg_id
-        name = message.text
-        data["name"][1] = name
 
-        bot.send_message(message.chat.id, "Введите должность нового сотрудника", reply_markup=get_cancel_keyboard())
-        bot.register_next_step_handler(message, invite_new_user_step_position, bot=bot, data=data)
-    except Exception as e:
-        print(e)
-        bot.reply_to(message, "Не удалось создать пользоватея")
+    name = message.text
+    br.params["new_user_name"].value = name
+
+    bot.send_message(message.chat.id, "Введите должность нового сотрудника", reply_markup=get_cancel_keyboard())
+    bot.register_next_step_handler(message, invite_new_user_step_position, bot=bot, br=br)
+
+
+@handle_errors
+@handle_action_cancel
+def invite_new_user_step_position(message: types.Message, bot: TeleBot, br: BitrixRequest):
+    position = message.text
+    br.params["new_user_position"].value = position
+    msg = bot.send_message(message.chat.id, "Введите подразделение нового сотрудника", reply_markup=get_cancel_keyboard())
+    bot.register_next_step_handler(msg, invite_new_user_step_division, bot=bot, br=br)
 
 
 
 @handle_errors
 @handle_action_cancel
-def invite_new_user_step_position(message: types.Message, bot: TeleBot, data: dict):
-    try:
-        position = message.text
-        data["position"][1] = position
-        msg = bot.send_message(message.chat.id, "Введите подразделение нового сотрудника", reply_markup=get_cancel_keyboard())
-        bot.register_next_step_handler(msg, invite_new_user_step_division, bot=bot, data=data)
-    except Exception as e:
-        bot.reply_to(message, "Не удалось создать пользоватея")
+def invite_new_user_step_division(message: types.Message, bot: TeleBot, br: BitrixRequest):
+    division = message.text
+    br.params["new_user_division"].value = division
+    msg = bot.send_message(message.chat.id, "Введите ФИО руководителя нового сотрудника", reply_markup=get_cancel_keyboard())
+    bot.register_next_step_handler(msg, invite_new_user_step_supervisor, bot=bot, br=br)
 
 
 @handle_errors
 @handle_action_cancel
-def invite_new_user_step_division(message: types.Message, bot: TeleBot, data: dict):
-    try:
-        division = message.text
-        data["division"][1] = division
-        msg = bot.send_message(message.chat.id, "Введите ФИО руководителя нового сотрудника", reply_markup=get_cancel_keyboard())
-        bot.register_next_step_handler(msg, invite_new_user_step_supervisor, bot=bot, data=data)
-    except Exception as e:
-        bot.reply_to(message, "Не удалось создать пользоватея")
+def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, br: BitrixRequest):
 
+    supervsor = message.text
+    br.params["new_user_supervisor"].value = bitrix_id_by_name("users.json", supervsor)
+    record_data = br.get_data_for_record()
+    request_id = read_load_json_data("users_requests.json", record_data)
+    br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes["new_user"].name}"
+    requests.get(br.create_bitrix_smart_process_element("new_user"))
+    bot.reply_to(message, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
 
-@handle_errors
-@handle_action_cancel
-def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, data: dict):
-    try:
-        supervsor = message.text
-        data["supervisor"][1] = bitrix_id_by_name("users.json", supervsor)
-        request_id = read_load_json_data("users_requests.json", data)
-        requests.get(f'''{B24_WH}crm.item.add.json?entityTypeId=1034
-                     &fields[TITLE]=ТГ запрос №{request_id} - {data["type"]}
-                     &fields[ufCrm_12_1723450334376]=160
-                     &fields[{data["name"][0]}]={data["name"][1]}
-                     &fields[{data["position"][0]}]={data["position"][1]}
-                     &fields[{data["division"][0]}]={data["division"][1]}
-                     &fields[{data["supervisor"][0]}]={data["supervisor"][1]}
-                     &fields[{data["initiator"][0]}]={data["initiator"][1]}
-                     &fields[{data["initiator_tg_id"][0]}]={data["initiator_tg_id"][1]}''')
-        bot.reply_to(message, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
-    except Exception as e:
-        bot.reply_to(message, "Не удалось создать пользоватея")
 
 
 HANDLERS = [
