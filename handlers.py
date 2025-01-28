@@ -96,7 +96,7 @@ def procces_access_rights_step_link(message: types.Message, bot: TeleBot, br: Bi
     br.params["acces_rights_object_link"].value = double_coded_url
     record_data = br.get_data_for_record()
     request_id = read_load_json_data("users_requests.json", record_data)
-    br.params["title"].value = f"ТГ запрос №{request_id} - "
+    br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes['access_rights'].name}"
     requests.get(br.create_bitrix_smart_process_element("access_rights"))
     bot.send_message(message.chat.id, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
 
@@ -148,7 +148,7 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, br: Bi
     br.params["new_user_supervisor"].value = bitrix_id_by_name("users.json", supervsor)
     record_data = br.get_data_for_record()
     request_id = read_load_json_data("users_requests.json", record_data)
-    br.params["title"].value = f"ТГ запрос №{request_id} - "
+    br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes['new_user'].name}"
     requests.get(br.create_bitrix_smart_process_element("new_user"))
     bot.reply_to(message, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
 
