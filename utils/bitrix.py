@@ -34,8 +34,9 @@ class BitrixRequest:
         self.params = {
             "title": Param(field="TITLE", value=None, name="Название"),
             "request_category": Param(field="ufCrm_12_1723450334376", value=None, name="Категория заявки"),
-            "initiator": Param(field="ufCRM_12_1732527565", value=None, name="Название"),
+            "initiator": Param(field="ufCrm_12_1732527565", value=None, name="Заявитель"),
             "initiator_tg_id": Param(field="ufCrm_12_1736781758613", value=None, name="Телеграм заявителя"),
+            "request_id": Param(field="ufCrm_12_1738307039", value=None, name="Номер заявки"),
             "new_user_name": Param(field="ufCrm_12_1736781830742", value=None, name="ФИО нового сотрудника"),
             "new_user_position": Param(field="ufCrm_12_1736781849952", value=None, name="Должность"),
             "new_user_division": Param(field="ufCrm_12_1736781881035", value=None, name="Подразделение"),

@@ -4,10 +4,13 @@ from utils.utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_cha
 from utils.bitrix import BitrixRequest
 import urllib.parse
 from messages import  welcome_message, info_message, help_message, rights_list_message
-from keyboards import create_keyboard, get_cancel_keyboard
+from keyboards.keyboards import create_keyboard, get_cancel_keyboard
 from decorators import handle_errors , handle_action_cancel
 from config import B24_WH, B24_ADMIN_ID
+import logging
 
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def hello_handler(message: types.Message, bot: TeleBot):
     bot.send_message(message.chat.id, "Hello test")
@@ -36,19 +39,18 @@ def request_handle(message: types.Message, bot: TeleBot):
 
 def handle_message(message: types.Message, bot:TeleBot):
 
-    chat_id = message.chat.id
+    handlers = {
+        "Подключение нового сотрудника": (invite_new_user_step_name, "Введите ФИО нового сотрудника"),
+        "Предоставление прав доступа": (procces_access_rights_step_name, "Введите ФИО сотрудника, кому необходимо предоставить права доступа."),
+        "Отправить уведомление": (procces_notify_step, "Введите текст уведомления")
+    }
 
-    if message.text == "Подключение нового сотрудника":
-        msg = bot.send_message(message.chat.id, "Введите ФИО нового сотрудника", reply_markup=get_cancel_keyboard())
-        bot.register_next_step_handler(message, invite_new_user_step_name, bot=bot)
-    elif message.text == "Предоставление прав доступа":
-        msg = bot.send_message(chat_id, "Введите ФИО сотрудника, кому необходимо предоставить права доступа.", reply_markup=get_cancel_keyboard())
-        bot.register_next_step_handler(msg, procces_access_rights_step_name, bot=bot)
-    elif message.text == "Отправить уведомление":
-        msg = bot.reply_to(message, "Добавте текст уведомления")
-        bot.register_next_step_handler(msg, procces_notify_step, bot=bot)
+    if message.text in handlers:
+        handler, prompt = handlers[message.text]
+        msg = bot.send_message(message.chat.id, prompt, reply_markup=get_cancel_keyboard())
+        bot.register_next_step_handler(msg, handler, bot=bot)
     else:
-        bot.reply_to(message, f"You tuped: {message.text}")
+        bot.reply_to(message, f"Команды '{message.text}' не существует.")
 
 
 def procces_notify_step(message: types.Message, bot: TeleBot):
@@ -96,9 +98,10 @@ def procces_access_rights_step_link(message: types.Message, bot: TeleBot, br: Bi
     br.params["acces_rights_object_link"].value = double_coded_url
     record_data = br.get_data_for_record()
     request_id = read_load_json_data("users_requests.json", record_data)
-    br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes['access_rights'].name}"
+    br.params["request_id"].value = request_id
+    br.params["title"].value = f"ТГ запрос №{request_id}"
     requests.get(br.create_bitrix_smart_process_element("access_rights"))
-    bot.send_message(message.chat.id, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
+    bot.send_message(message.chat.id, f"Ваш запрос №{br.params['request_id'].value} принят в работу. Ожидайте уведомление о выполнении запроса.")
 
 
 
@@ -148,6 +151,7 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, br: Bi
     br.params["new_user_supervisor"].value = bitrix_id_by_name("users.json", supervsor)
     record_data = br.get_data_for_record()
     request_id = read_load_json_data("users_requests.json", record_data)
+    br.params["request_id"].value = request_id
     br.params["title"].value = f"ТГ запрос №{request_id} - {br.categoryes['new_user'].name}"
     requests.get(br.create_bitrix_smart_process_element("new_user"))
     bot.reply_to(message, f"Ваш запрос №{request_id} принят в работу. Ожидайте уведомление о выполнении запроса.")
