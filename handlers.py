@@ -1,25 +1,77 @@
 from telebot import types, TeleBot
 import requests
-from utils.utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id
-from utils.bitrix import BitrixRequest
+from utils.utils import read_load_json_data, bitrix_id_by_name, bitrix_id_by_chat_id, escape_markdown, get_ur_users, user_access_by_id, registr_new_user
+from utils.bitrix.bitrix import BitrixRequest
+from utils.classes import ProjectArchClass, FaqClass
 import urllib.parse
-from messages import  welcome_message, info_message, help_message, rights_list_message
+from messages import  welcome_message, info_message, help_message, rights_list_message, test_funcs_message
 from keyboards.keyboards import create_keyboard, get_cancel_keyboard
 from decorators import handle_errors , handle_action_cancel
 from config import B24_WH, B24_ADMIN_ID
 import logging
-
+import json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+faq = FaqClass()
+pa = ProjectArchClass()
+
+state = {
+    "status": "null"
+}
+
+
+def restrict_access(message: types.Message, bot: TeleBot):
+    bot.reply_to(message, "Извините, у вас нет доступа к этому боту.")
+
+def new_funcs_handler(message: types.Message, bot: TeleBot):
+    keyboard = create_keyboard([types.KeyboardButton("FAQ"),
+                                types.KeyboardButton("Проектный архив")])
+    bot.send_message(message.chat.id, test_funcs_message, parse_mode="Markdown", reply_markup=keyboard)
+
+
+def project_arch_handle(message: types.Message, bot: TeleBot):
+    state["status"] = "project_arch"
+    print(state["status"])
+    keyboard = create_keyboard([option for option in pa.options])
+    bot.send_message(message.chat.id, "Выберите интересующий вас функционал", parse_mode="Markdown", reply_markup=keyboard)
+
 
 def hello_handler(message: types.Message, bot: TeleBot):
     bot.send_message(message.chat.id, "Hello test")
 
 
 def start_handle(message: types.Message, bot: TeleBot):
-    keyboard = create_keyboard([types.KeyboardButton("Создать запрос")])
-    bot.send_message(message.chat.id, welcome_message, parse_mode="Markdown", reply_markup=keyboard)
+    if user_access_by_id(str(message.chat.id)):
+        keyboard = create_keyboard([types.KeyboardButton("Создать запрос"),
+                                    types.KeyboardButton("FAQ"),
+                                    types.KeyboardButton("Проектный архив")])
+        bot.send_message(message.chat.id, welcome_message, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        msg = bot.send_message(message.chat.id, "Вы не зарегестрированный пользователь. Пожалуйста, пройдите регестрацию. Введите полностью свое ФИО")
+        bot.register_next_step_handler(msg, new_user_name, bot=bot)
 
+@handle_action_cancel
+def new_user_name(message: types.Message, bot: TeleBot):
+    urusers = get_ur_users()
+    print(urusers)
+    if message.text in urusers:
+        msg = bot.send_message(message.chat.id, f"Пользователь найден. Введите пароль.")
+
+        bot.register_next_step_handler(msg, new_user_password, user=message.text, bot=bot)
+    else:
+        bot.send_message(message.chat.id, f"Пользователь не найден.")
+
+
+@handle_action_cancel
+def new_user_password(message: types.Message, bot: TeleBot, user: str):
+    urusers = get_ur_users()
+    if message.text == urusers[user]["password"]:
+        registr_new_user(message.chat.id, user, message.chat.username)
+        bot.send_message(message.chat.id, f"Регистрация прошла успешно.")
+    else:
+        msg = bot.send_message(message.chat.id, f"Неверный пароль. Попробуйте снова.")
+        bot.register_next_step_handler(msg, new_user_password,  bot=bot, user=user)
 
 def help_handle(message: types.Message, bot: TeleBot):
     keyboard = create_keyboard([types.KeyboardButton("Задать вопрос разработчику бота")])
@@ -31,27 +83,68 @@ def info_handle(message: types.Message, bot: TeleBot):
 
 
 def request_handle(message: types.Message, bot: TeleBot):
+    state["status"] = "request"
+    print(state["status"])
     keyboard = create_keyboard([types.KeyboardButton("Подключение нового сотрудника"),
                                 types.KeyboardButton("Предоставление прав доступа"),
                                 types.KeyboardButton("Отправить уведомление")])
     bot.send_message(message.chat.id, 'Выберите интересующий вас запрос из меню ниже.', reply_markup=keyboard)
 
+def faq_handle(message: types.Message, bot: TeleBot):
+    categories = faq.categories
+    keyboard = create_keyboard([c for c in categories])
+    state["status"] = "faq"
+    print(state["status"])
+    bot.send_message(message.chat.id, "Выберите категорию вопросов", reply_markup=keyboard)
 
-def handle_message(message: types.Message, bot:TeleBot):
 
-    handlers = {
+def handle_request(message: types.Message, bot:TeleBot):
+    requests = {
         "Подключение нового сотрудника": (invite_new_user_step_name, "Введите ФИО нового сотрудника"),
         "Предоставление прав доступа": (procces_access_rights_step_name, "Введите ФИО сотрудника, кому необходимо предоставить права доступа."),
-        "Отправить уведомление": (procces_notify_step, "Введите текст уведомления")
+        "Отправить уведомление": (procces_notify_step, "Введите текст уведомления"),
     }
 
-    if message.text in handlers:
-        handler, prompt = handlers[message.text]
+    if message.text in requests:
+        handler, prompt = requests[message.text]
         msg = bot.send_message(message.chat.id, prompt, reply_markup=get_cancel_keyboard())
         bot.register_next_step_handler(msg, handler, bot=bot)
     else:
         bot.reply_to(message, f"Команды '{message.text}' не существует.")
 
+
+@handle_errors
+@handle_action_cancel
+def handle_faq(message: types.Message, bot: TeleBot):
+    questions  = faq.categories[message.text]
+    keyboard = create_keyboard([q for q in questions])
+    bot.send_message(message.chat.id, "Выберите вопрос", parse_mode="Markdown", disable_web_page_preview=True, reply_markup=keyboard)
+    # closest_question = find_closest_question(message.text)
+    # if closest_question:
+    #     bot.send_message(message.chat.id, faq_data[closest_question])
+    # else:
+    #     bot.send_message(message.chat.id, "Извините, я не нашел ответа на ваш вопрос.")
+
+@handle_errors
+@handle_action_cancel
+def handle_faq_question(message: types.Message, bot: TeleBot):
+    for couple in faq.categories.values():
+        if message.text in couple:
+            answer = escape_markdown(couple[message.text])
+            bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True)
+
+@handle_errors
+@handle_action_cancel
+def handle_project_arch(message: types.Message, bot: TeleBot):
+    # text = pa.options[message.text]
+    keyboard = pa.get_project_keyboard()
+    text = "Выберите проект"
+    bot.send_message(message.chat.id, text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+
+
+def handle_project_arch_content(message: types.Message, bot: TeleBot):
+    text = escape_markdown(pa.get_project_folders_content(message.text))
+    bot.send_message(message.chat.id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
 
 def procces_notify_step(message: types.Message, bot: TeleBot):
 
@@ -159,13 +252,24 @@ def invite_new_user_step_supervisor(message: types.Message, bot: TeleBot, br: Bi
 
 
 HANDLERS = [
+    (start_handle, lambda message: message.text.startswith("/start")),
+    (restrict_access, lambda message: not user_access_by_id(str(message.chat.id))),
     (hello_handler, lambda message: message.text == "Hello"),
     (request_handle, lambda message: message.text == "Создать запрос"),
+    (project_arch_handle, lambda message: message.text == "Проектный архив" or message.text.startswith("/prach")),
+    (faq_handle, lambda message: message.text == "FAQ" or message.text.startswith("/faq")),
     (request_handle, lambda message: message.text.startswith("/request")),
-    (start_handle, lambda message: message.text.startswith("/start")),
+
     (help_handle, lambda message: message.text.startswith("/help")),
     (info_handle, lambda message: message.text.startswith("/info")),
-    (handle_message, lambda message: True)
+    (new_funcs_handler, lambda message: message.text.startswith("/tests")),
+    (handle_faq_question, lambda message: state["status"] == "faq" and message.text in faq.get_questions()),
+    (handle_faq, lambda message: state["status"] == "faq"),
+    (handle_project_arch_content, lambda message: state["status"] == "project_arch" and message.text in pa.get_projects_list()),
+    (handle_project_arch, lambda message: state["status"] == "project_arch"),
+    (handle_request, lambda message: state["status"] == "request")
+
+
 ]
 
 def register_handler(bot: TeleBot):
